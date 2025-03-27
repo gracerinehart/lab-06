@@ -1,0 +1,61 @@
+---
+title: "lab-6"
+format: html
+editor: visual
+---
+
+# Question 1
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(powerjoin)
+library(glue)
+library(vip)
+library(baguette)
+library(ggthemes)
+library(patchwork)
+
+root  <- 'https://gdex.ucar.edu/dataset/camels/file'
+
+download.file('https://gdex.ucar.edu/dataset/camels/file/camels_attributes_v2.0.pdf', 
+              'data/camels_attributes_v2.0.pdf')
+
+types <- c("clim", "geol", "soil", "topo", "vege", "hydro")
+
+remote_files  <- glue('{root}/camels_{types}.txt')
+local_files   <- glue('data/camels_{types}.txt')
+
+walk2(remote_files, local_files, download.file, quiet = TRUE)
+
+camels <- map(local_files, read_delim, show_col_types = FALSE) 
+
+camels <- power_full_join(camels ,by = 'gauge_id')
+
+# zero_q_freq represents frequency of days with Q = 0 mm/day, and it's measured as a percent.
+```
+
+# Question 2
+```{r}
+plot1 <- ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
+  borders("state", colour = "gray50") +
+  geom_point(aes(color = aridity)) +
+  scale_color_gradient(low = "lightblue", high = "darkgreen") +
+  labs(title= "Sites Ranked on Aridity", x= "Gauge Longitude", y= "Gauge Latitude" ) +
+  ggthemes::theme_map() 
+
+plot2 <- ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
+  borders("state", colour = "gray50") +
+  geom_point(aes(color = p_mean)) +
+  scale_color_gradient(low = "slategray1", high = "orchid4") +
+  labs(title= "Sites Ranked on Mean Daily Precipitation", x= "Gauge Longitude", y= "Gauge Latitude" ) +
+  ggthemes::theme_map()
+
+plot1 + plot2
+```
+
+
+
+
+
+
