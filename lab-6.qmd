@@ -1,11 +1,14 @@
 ---
-title: "lab-6"
+title: "Lab 6: Machine Learning in Hydrology"
+subtitle: ESS330
+author:
+  - name: Grace Rinehart
+    email: mailto:gracerin@colostate.edu
 format: html
 editor: visual
 ---
 
 # Question 1
-
 ```{r}
 library(tidyverse)
 library(tidymodels)
@@ -15,6 +18,8 @@ library(vip)
 library(baguette)
 library(ggthemes)
 library(patchwork)
+library(xgboost)
+library(yardstick)
 
 root  <- 'https://gdex.ucar.edu/dataset/camels/file'
 
@@ -54,8 +59,133 @@ plot2 <- ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
 plot1 + plot2
 ```
 
+# Question 3
+```{r}
+camels %>%
+  select(aridity, p_mean, q_mean) %>% 
+  drop_na() %>%
+  cor()
 
+set.seed(123)
+camels <- camels %>%
+  mutate(logQmean = log(q_mean))
 
+camels_split <- initial_split(camels, prop = 0.8)
+camels_train <- training(camels_split)
+camels_test  <- testing(camels_split)
 
+camels_cv <- vfold_cv(camels_train, v = 10)
 
+rec <-  recipe(logQmean ~ aridity + p_mean, data = camels_train) %>%
+  step_log(all_predictors()) %>%
+  step_interact(terms = ~ aridity:p_mean) %>%
+  step_naomit(all_predictors(), all_outcomes())
 
+lm_model <- linear_reg() %>%
+  set_engine("lm") %>%
+  set_mode("regression")
+
+rf_model <- rand_forest() %>%
+  set_engine("ranger")%>%
+  set_mode("regression")
+
+xgb_model <- boost_tree() %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+nn_model <- bag_mlp() %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+lm_wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(lm_model) %>%
+  fit(data = camels_train) 
+
+rf_wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(rf_model) %>%
+  fit(data = camels_train) 
+
+xgb_wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(xgb_model) %>%
+  fit(data = camels_train)
+
+nn_wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(nn_model) %>%
+  fit(data = camels_train)
+
+lm_data <- augment(lm_wf, new_data = camels_test)
+rf_data <- augment(rf_wf, new_data = camels_test)
+xgb_data <- augment(xgb_wf, new_data = camels_test)
+nn_data <- augment(nn_wf, new_data = camels_test)
+
+metrics(lm_data,  truth = logQmean, estimate = .pred)
+metrics(rf_data,  truth = logQmean, estimate = .pred)
+metrics(xgb_data,  truth = logQmean, estimate = .pred)
+metrics(nn_data,  truth = logQmean, estimate = .pred)
+
+# I would move forward with the neutral network model. The root mean squared error (RMSE) and mean absolute error (MAE) values are lower than the other models. The R squared value (RSQ) is also closer to 1. These values show that the neutral network model is more accurate than the other 3 models.
+```
+
+# Question 4a: Data Splitting
+```{r}
+set.seed(123)
+
+camels_split <- initial_split(camels, prop = 0.75)
+camels_train <- training(camels_split)
+camels_test  <- testing(camels_split)
+
+camels_cv <- vfold_cv(camels_train, v = 10)
+```
+
+# Question 4b: Recipe
+```{r}
+camels <- camels %>%
+  mutate(logQmean = log(q_mean))
+
+# I chose this formula because it is straightforward and allows for the normalization of the skewed q_mean data. This formula also works well with regression models.
+
+recip <-  recipe(logQmean ~ aridity + p_mean, data = camels_train) %>%
+  step_log(all_predictors()) %>%
+  step_interact(terms = ~ aridity:p_mean) %>%
+  step_naomit(all_predictors(), all_outcomes())
+```
+
+# Question 4c: Defining Models
+```{r}
+rand_forest_model <- rand_forest() %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+linear_model <- linear_reg() %>%
+  set_engine("lm") %>%
+  set_mode("regression")
+
+nnet_model <- bag_mlp() %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+```
+
+# Question 4d: Workflow Set
+```{r}
+wf <- workflow_set(list(recip), list(rand_forest_model, linear_model, nnet_model)) %>%
+  workflow_map('fit_resamples', resamples = camels_cv)
+
+collect_metrics(wf)
+```
+
+# Question 4e: Evaluation
+```{r}
+autoplot(wf)
+
+rank_results(wf, rank_metric = "rsq", select_best = TRUE)
+
+```
+
+# Question 4f: Extract & Evaluate
+```{r}
+
+```
