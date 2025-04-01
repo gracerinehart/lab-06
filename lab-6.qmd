@@ -9,6 +9,7 @@ editor: visual
 ---
 
 # Question 1
+
 ```{r}
 library(tidyverse)
 library(tidymodels)
@@ -60,6 +61,7 @@ plot1 + plot2
 ```
 
 # Question 3
+
 ```{r}
 camels %>%
   select(aridity, p_mean, q_mean) %>% 
@@ -131,6 +133,7 @@ metrics(nn_data,  truth = logQmean, estimate = .pred)
 ```
 
 # Question 4a: Data Splitting
+
 ```{r}
 set.seed(123)
 
@@ -142,6 +145,7 @@ camels_cv <- vfold_cv(camels_train, v = 10)
 ```
 
 # Question 4b: Recipe
+
 ```{r}
 camels <- camels %>%
   mutate(logQmean = log(q_mean))
@@ -155,6 +159,7 @@ recip <-  recipe(logQmean ~ aridity + p_mean, data = camels_train) %>%
 ```
 
 # Question 4c: Defining Models
+
 ```{r}
 rand_forest_model <- rand_forest() %>%
   set_engine("ranger") %>%
@@ -170,12 +175,14 @@ linear_model <- linear_reg() %>%
 ```
 
 # Question 4d: Workflow Set
+
 ```{r}
 work_set <- workflow_set(list(recip), list(rand_forest_model, xgboost_model, linear_model)) %>%
   workflow_map('fit_resamples', resamples = camels_cv)
 ```
 
 # Question 4e: Evaluation
+
 ```{r}
 autoplot(work_set)
 
@@ -185,6 +192,7 @@ rank_results(work_set, rank_metric = "rsq", select_best = TRUE)
 ```
 
 # Question 4f: Extract & Evaluate
+
 ```{r}
 set.seed(123)
 
@@ -217,5 +225,5 @@ plot <- ggplot(nn_data, aes(x = logQmean, y = .pred, colour = aridity)) +
 
 print(plot)
 
-# Most points are clustered near the black line, suggesting that the model generally performs well. While many points are close to the line, there is some noticeable deviation, especially in lower observed values on the left. Some points fall far below the line, indicating that the model underestimates certain observed values, while some points are far above the line, showing that the model also overestimates certain values.
+# Most points are clustered near the black line, suggesting that the model generally performs well. While many points are close to the line, there is some noticeable deviation, especially in lower observed values on the left. Some points fall far below or far above the line, indicating that the model underestimates and overestimates certain values.
 ```
