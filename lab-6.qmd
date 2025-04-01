@@ -160,32 +160,62 @@ rand_forest_model <- rand_forest() %>%
   set_engine("ranger") %>%
   set_mode("regression")
 
-linear_model <- linear_reg() %>%
-  set_engine("lm") %>%
+xgboost_model <- boost_tree() %>%
+  set_engine("xgboost") %>%
   set_mode("regression")
 
-nnet_model <- bag_mlp() %>%
-  set_engine("nnet") %>%
+linear_model <- linear_reg() %>%
+  set_engine("lm") %>%
   set_mode("regression")
 ```
 
 # Question 4d: Workflow Set
 ```{r}
-wf <- workflow_set(list(recip), list(rand_forest_model, linear_model, nnet_model)) %>%
+work_set <- workflow_set(list(recip), list(rand_forest_model, xgboost_model, linear_model)) %>%
   workflow_map('fit_resamples', resamples = camels_cv)
-
-collect_metrics(wf)
 ```
 
 # Question 4e: Evaluation
 ```{r}
-autoplot(wf)
+autoplot(work_set)
 
-rank_results(wf, rank_metric = "rsq", select_best = TRUE)
+rank_results(work_set, rank_metric = "rsq", select_best = TRUE)
 
+# I think the rand_forest model is the best of three models I chose. The root mean squared error (RMSE) is lower than the other models, and the R squared value (RSQ) is closer to 1. While all of the models had very similar results, the rand_forest model has more ideal values associated with it.
 ```
 
 # Question 4f: Extract & Evaluate
 ```{r}
+set.seed(123)
 
+camels_split <- initial_split(camels, prop = 0.75)
+camels_train <- training(camels_split)
+camels_test  <- testing(camels_split)
+
+rec <-  recipe(logQmean ~ aridity + p_mean, data = camels_train) %>%
+  step_log(all_predictors()) %>%
+  step_interact(terms = ~ aridity:p_mean) %>%
+  step_naomit(all_predictors(), all_outcomes())
+
+nn_model <- bag_mlp() %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+nn_wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(nn_model) %>%
+  fit(data = camels_train)
+
+nn_data <- augment(nn_wf, new_data = camels_test)
+
+plot <- ggplot(nn_data, aes(x = logQmean, y = .pred, colour = aridity)) +
+  scale_color_gradient(low = "#FFFFC5", high = "red4") +
+  geom_point() +
+  geom_abline() +
+  labs(title = "Observed vs Predicted Values", x = "Observed Values", y = "Predicted Values") +
+  theme_linedraw()
+
+print(plot)
+
+# Most points are clustered near the black line, suggesting that the model generally performs well. While many points are close to the line, there is some noticeable deviation, especially in lower observed values on the left. Some points fall far below the line, indicating that the model underestimates certain observed values, while some points are far above the line, showing that the model also overestimates certain values.
 ```
