@@ -4,8 +4,12 @@ subtitle: ESS330
 author:
   - name: Grace Rinehart
     email: mailto:gracerin@colostate.edu
-format: html
+format: 
+  html:
+    self-contained: true
 editor: visual
+project:
+  output-dir: docs
 ---
 
 # Question 1
