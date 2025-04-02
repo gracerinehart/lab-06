@@ -1,16 +1,16 @@
 ---
-title: "Lab 6: Machine Learning in Hydrology"
-subtitle: ESS330
-author:
-  - name: Grace Rinehart
-    email: mailto:gracerin@colostate.edu
+project:
+  title: "Lab 6: Machine Learning in Hydrology"
+  subtitle: ESS330
+  output-dir: docs
+  type: website
+  author:
+    - name: Grace Rinehart
+      email: mailto:gracerin@colostate.edu
 format: 
   html:
     self-contained: true
 editor: visual
-project:
-  output-dir: docs
-  type: website
 ---
 
 # Question 1
