@@ -10,6 +10,7 @@ format:
 editor: visual
 project:
   output-dir: docs
+  type: website
 ---
 
 # Question 1
