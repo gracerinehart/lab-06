@@ -1,0 +1,208 @@
+---
+title: "hyperparameter-tuning"
+format: html
+editor: visual
+---
+
+# Data Import/Tidy/Transform
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(powerjoin)
+library(glue)
+library(vip)
+library(baguette)
+library(ggthemes)
+library(patchwork)
+library(xgboost)
+library(yardstick)
+library(skimr)
+library(visdat)
+library(ggpubr)
+library(recipes)
+library(dials)
+library(ggplot2)
+
+camels <- map(local_files, read_delim, show_col_types = FALSE) 
+camels <- power_full_join(camels ,by = 'gauge_id')
+
+glimpse(camels)
+skim(camels)
+vis_dat(camels)
+
+camels %>%
+  select(aridity, p_mean, q_mean) %>% 
+  drop_na() %>%
+  cor()
+```
+
+# Data Spliting
+```{r}
+set.seed(123)
+
+camels <- camels %>%
+  mutate(logQmean = log(q_mean))
+
+camels_split <- initial_split(camels, prop = 0.8)
+camels_train <- training(camels_split)
+camels_test  <- testing(camels_split)
+```
+
+# Feature Engineering
+```{r}
+rec <-  recipe(q_mean ~ aridity + p_mean, data = camels_train) %>%
+  step_log(all_predictors()) %>%
+  step_interact(terms = ~ aridity:p_mean) %>%
+  step_naomit(all_predictors(), all_outcomes())
+```
+
+# Resampling and Model Testing
+```{r}
+camels_cv <- vfold_cv(camels_train, v = 10)
+
+lm_model <- linear_reg() %>%
+  set_engine("lm") %>%
+  set_mode("regression")
+
+rf_model <- rand_forest() %>%
+  set_engine("ranger")%>%
+  set_mode("regression")
+
+nn_model <- bag_mlp() %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+wf_set <- workflow_set(list(rec), list(lm_model, rf_model, nn_model)) %>%
+  workflow_map('fit_resamples', resamples = camels_cv)
+
+autoplot(wf_set)
+
+# I will be moving forward with the neural network model. The root mean squared error (RMSE) is lower than the other models, and the R squared value (RSQ) is closer to 1.
+
+# The neural network model is a mlp type model. It uses the "nnet" engine and is set to "regression" mode. This model performs well because it can capture complex, nonlinear relationships in the data. Neural network models also automatically learn interactions between predictors, making them well-suited for data sets with many similar variables.
+```
+
+# Model Tuning
+```{r}
+nn_mod <-
+  mlp(hidden_units = tune(), penalty = tune()) %>%
+  set_engine("nnet") %>%
+  set_mode("regression")
+
+nn_wflow <- workflow(rec, nn_mod)
+
+dials <- extract_parameter_set_dials(nn_wflow)
+dials$object
+
+my.grid <- grid_latin_hypercube(dials, size = 25)
+
+model_params <-  tune_grid(
+    nn_wflow,
+    resamples = camels_cv,
+    grid = my.grid,
+    metrics = metric_set(rmse, rsq, mae),
+    control = control_grid(save_pred = TRUE))
+
+autoplot(model_params)
+
+# The plot shows the performance of the model across different hyper-parameter combinations. The x-axis represents the hyper-parameters hidden_units and amount of regularization. The y-axis shows the performance metrics (RMSE, MAE, and RSQ), where lower values indicate better performance. The plot shows how the choice of hyper-parameters affects accuracy, allowing us identify the best performing configurations.
+
+collect_metrics(model_params) %>%
+  arrange(mean)
+
+# This shows a tibble with the metrics like RMSE, MAE, and RSQ for all combinations of hidden_units and penalty.
+
+show_best(model_params, metric = "mae", n = 5)
+
+# The best performing model based on MAE has hidden_units = 2 and penalty = 1.27e-08. This combination produced the lowest MAE (0.323).
+
+hp_best <- select_best(model_params, metric = "mae")
+
+model_params_wf <- nn_wflow %>%
+  finalize_workflow(hp_best)
+```
+
+# Final Model Verification
+```{r}
+final_fit <- last_fit(model_params_wf, split = camels_split)
+
+metrics <- collect_metrics(final_fit)
+
+# The final model metrics were slightly worse for the test data when compared to the training data. The test data had a lower RSQ and a higher RMSE. This means the model most likely experienced over fitting. The model seems to perform okay, but some adjustments might help it perform better on new data.
+
+final_predictions <- collect_predictions(final_fit)
+
+plot1 <- ggplot(final_predictions, aes(x = .pred, y = q_mean)) +
+  geom_point(aes(color = .pred), alpha = 0.6) + 
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +  
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +  
+  scale_color_viridis_c() +  
+  labs(
+    title = "Predicted vs Actual Values of q_mean",
+    x = "Predicted q_mean",
+    y = "Actual q_mean"
+  ) +
+  theme_minimal()
+
+print(plot1)
+```
+
+# Building a Map
+```{r}
+final_fit_full <- fit(model_params_wf, data = camels)
+
+final_predictions_full <- augment(final_fit_full, new_data = camels)
+head(final_predictions_full)
+
+final_predictions_full %>%
+  mutate(residuals = (.pred - q_mean)^2)
+
+predictions_plot <- ggplot(final_predictions_full, aes(x = gauge_lon, y = gauge_lat)) +
+  geom_point(aes(color = .pred), size = 2) +
+  scale_color_viridis_c() +  # Color scale for predictions
+  labs(
+    title = "Predictions of q_mean",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+print(predictions_plot)
+
+residuals_plot <- ggplot(final_predictions_full, aes(x = gauge_lon, y = gauge_lat)) +
+  geom_point(aes(color = .resid), size = 2) +
+  scale_color_viridis_c() + 
+  labs(
+    title = "Residuals of q_mean Predictions",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+print(residuals_plot)
+
+print(predictions_plot + residuals_plot)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
