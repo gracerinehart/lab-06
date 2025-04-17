@@ -1,10 +1,20 @@
 ---
-title: "hyperparameter-tuning"
-format: html
+project:
+  title: "Lab 8: Hyperparameter-tuning"
+  subtitle: "ESS330"
+  author:
+  - name: Grace Rinehart
+    email: mailto:gracerin@colostate.edu
+  output-dir: docs
+  type: website
+format: 
+  html:
+    self-contained: true
 editor: visual
 ---
 
 # Data Import/Tidy/Transform
+
 ```{r}
 library(tidyverse)
 library(tidymodels)
@@ -23,6 +33,18 @@ library(recipes)
 library(dials)
 library(ggplot2)
 
+root  <- 'https://gdex.ucar.edu/dataset/camels/file'
+
+download.file('https://gdex.ucar.edu/dataset/camels/file/camels_attributes_v2.0.pdf', 
+              'camels_attributes_v2.0.pdf')
+
+types <- c("clim", "geol", "soil", "topo", "vege", "hydro")
+
+remote_files  <- glue('{root}/camels_{types}.txt')
+local_files   <- glue('camels_{types}.txt')
+
+walk2(remote_files, local_files, download.file, quiet = TRUE)
+
 camels <- map(local_files, read_delim, show_col_types = FALSE) 
 camels <- power_full_join(camels ,by = 'gauge_id')
 
@@ -36,7 +58,8 @@ camels %>%
   cor()
 ```
 
-# Data Spliting
+# Data Splitting
+
 ```{r}
 set.seed(123)
 
@@ -49,6 +72,7 @@ camels_test  <- testing(camels_split)
 ```
 
 # Feature Engineering
+
 ```{r}
 rec <-  recipe(q_mean ~ aridity + p_mean, data = camels_train) %>%
   step_log(all_predictors()) %>%
@@ -57,6 +81,7 @@ rec <-  recipe(q_mean ~ aridity + p_mean, data = camels_train) %>%
 ```
 
 # Resampling and Model Testing
+
 ```{r}
 camels_cv <- vfold_cv(camels_train, v = 10)
 
@@ -83,6 +108,7 @@ autoplot(wf_set)
 ```
 
 # Model Tuning
+
 ```{r}
 nn_mod <-
   mlp(hidden_units = tune(), penalty = tune()) %>%
@@ -123,6 +149,7 @@ model_params_wf <- nn_wflow %>%
 ```
 
 # Final Model Verification
+
 ```{r}
 final_fit <- last_fit(model_params_wf, split = camels_split)
 
@@ -148,6 +175,7 @@ print(plot1)
 ```
 
 # Building a Map
+
 ```{r}
 final_fit_full <- fit(model_params_wf, data = camels)
 
@@ -159,7 +187,7 @@ final_predictions_full %>%
 
 predictions_plot <- ggplot(final_predictions_full, aes(x = gauge_lon, y = gauge_lat)) +
   geom_point(aes(color = .pred), size = 2) +
-  scale_color_viridis_c() +  # Color scale for predictions
+  scale_color_viridis_c() +  
   labs(
     title = "Predictions of q_mean",
     x = "Longitude",
@@ -181,28 +209,3 @@ print(residuals_plot)
 
 print(predictions_plot + residuals_plot)
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
